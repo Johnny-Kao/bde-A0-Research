@@ -1,0 +1,38 @@
+name: A0-A5 one-host preliminary load
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  one-host:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: bloomberg/bde
+          path: upstream
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: bloomberg/bde-tools
+          path: bde-tools
+          persist-credentials: false
+      - name: Single-machine actual BDE transition and initial load
+        working-directory: upstream
+        run: |
+          set -euo pipefail
+          git rev-parse HEAD
+          (cd "$GITHUB_WORKSPACE" && python3 scripts/install_actual_benchmark.py)
+          (cd "$GITHUB_WORKSPACE" && python3 scripts/apply_a0_to_bde.py)
+          (cd "$GITHUB_WORKSPACE" && python3 scripts/apply_a1_guard.py)
+          (cd "$GITHUB_WORKSPACE" && python3 scripts/apply_a2_a5_integrated.py)
+          export PATH="$GITHUB_WORKSPACE/bde-tools/bin:$PATH"
+          eval "$(bbs_build_env -u opt_dbg_64_cpp17)"
+          bbs_build configure --regex ball_loggermanager
+          bbs_build build --target ball_loggermanager.t --tests build
+          BIN="$(find _build -type f -name 'ball_loggermanager.t' -print -quit)"
+          test -n "$BIN"
+          "$BIN" 999
+          echo "A0_A5_ONE_HOST_PROBE_PASS"
