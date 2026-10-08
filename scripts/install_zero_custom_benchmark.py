@@ -3,9 +3,9 @@
 from pathlib import Path
 p=Path("upstream/groups/bal/ball/ball_loggermanager.t.cpp")
 s=p.read_text()
-assert s.count("switch (test) { case 0:")==1
+assert s.count("      case 0:")==1
 s="#include <atomic>\n#include <chrono>\n#include <thread>\n#include <vector>\n"+s
-case=r'''switch (test) {
+case=r'''
       case 996: {
         ball::LoggerManagerConfiguration config;
         ball::LoggerManagerScopedGuard guard(config);
@@ -37,5 +37,5 @@ case=r'''switch (test) {
         }
       } break;
       case 0:'''
-p.write_text(s.replace("switch (test) { case 0:",case,1))
+p.write_text(s.replace("      case 0:",case,1))
 print("Installed actual BDE zero-custom control case 996")
