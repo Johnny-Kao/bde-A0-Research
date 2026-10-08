@@ -32,11 +32,13 @@ jobs:
           BDE_CMAKE_BUILD_DIR: ${{ github.workspace }}/upstream/_build
         run: |
           export PATH="${{ github.workspace }}/bde-tools/bin:$PATH"
-          eval "$(bbs_build_env -u opt_dbg_64_cpp17)"\n          bbs_build configure
+          eval "$(bbs_build_env -u opt_dbg_64_cpp17)"
+          bbs_build configure
       - name: Build actual BDE libraries
         working-directory: upstream
         env:
           BDE_CMAKE_BUILD_DIR: ${{ github.workspace }}/upstream/_build
         run: |
           export PATH="${{ github.workspace }}/bde-tools/bin:$PATH"
-          eval "$(bbs_build_env -u opt_dbg_64_cpp17)"\n          bbs_build build --target ball
+          eval "$(bbs_build_env -u opt_dbg_64_cpp17)"
+          bbs_build build --target ball
