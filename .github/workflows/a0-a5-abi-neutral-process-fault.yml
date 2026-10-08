@@ -1,0 +1,81 @@
+name: ABI-neutral isolated process interruption
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  fault-injection:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: bloomberg/bde
+          ref: 75dcd617380748053bebb30aa6ca73735677e849
+          path: upstream
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: bloomberg/bde-tools
+          path: bde-tools
+          persist-credentials: false
+      - name: Build actual BDE and exercise process interruption and recovery
+        working-directory: upstream
+        run: |
+          set -euo pipefail
+          mkdir -p "$GITHUB_WORKSPACE/evidence"
+          (cd "$GITHUB_WORKSPACE" && python3 scripts/install_controlled_concurrency.py)
+          (cd "$GITHUB_WORKSPACE" && python3 scripts/apply_a0_to_bde.py)
+          (cd "$GITHUB_WORKSPACE" && python3 scripts/apply_a1_guard.py)
+          (cd "$GITHUB_WORKSPACE" && python3 scripts/apply_a2_a5_integrated.py)
+          (cd "$GITHUB_WORKSPACE" && python3 scripts/apply_abi_neutral_epoch.py)
+          git diff --check
+          git diff --exit-code -- groups/bal/ball/ball_loggermanager.h
+          export PATH="$GITHUB_WORKSPACE/bde-tools/bin:$PATH"
+          eval "$(bbs_build_env -u opt_dbg_64_cpp17)"
+          bbs_build configure --regex ball_loggermanager
+          bbs_build build --target ball_loggermanager.t --tests build
+          BIN="$(find _build -type f -name ball_loggermanager.t -print -quit)"
+          test -n "$BIN"
+          echo "CPU_BEGIN"
+          lscpu | grep -E '^CPU\(s\)|Model name|Thread\(s\) per core'
+          free -m
+          echo "BASELINE_CASE_994"
+          /usr/bin/time -v -o "$GITHUB_WORKSPACE/evidence/uninterrupted.resources" timeout 40 "$BIN" 994 > "$GITHUB_WORKSPACE/evidence/uninterrupted.log"
+          for SIGNAL in STOP TERM KILL; do
+            echo "FAULT_CASE=$SIGNAL"
+            timeout 40 "$BIN" 994 > "$GITHUB_WORKSPACE/evidence/$SIGNAL.log" 2>&1 &
+            PID=$!
+            sleep 0.05
+            if kill -0 "$PID" 2>/dev/null; then
+              if [[ "$SIGNAL" == STOP ]]; then
+                kill -STOP "$PID"
+                sleep 0.2
+                kill -CONT "$PID"
+                wait "$PID"
+                echo "STOP_CONT_PASS"
+              else
+                kill -"$SIGNAL" "$PID"
+                set +e
+                wait "$PID"
+                RC=$?
+                set -e
+                echo "$SIGNAL return=$RC"
+                if [[ "$SIGNAL" == KILL ]]; then test "$RC" -eq 137; else test "$RC" -eq 143; fi
+              fi
+            else
+              wait "$PID"
+              echo "TARGET_FINISHED_BEFORE_SIGNAL"
+            fi
+            /usr/bin/time -v -o "$GITHUB_WORKSPACE/evidence/restart-$SIGNAL.resources" timeout 40 "$BIN" 994 > "$GITHUB_WORKSPACE/evidence/restart-$SIGNAL.log"
+            grep 'CONCURRENT_CORRECT generation=2 workers=64 scenario=2 errors=0' "$GITHUB_WORKSPACE/evidence/restart-$SIGNAL.log"
+            echo "RESTART_AFTER_$SIGNAL=PASS"
+          done
+          echo "ISOLATED_FAULT_MATRIX_PASS"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: isolated-process-fault-evidence
+          path: evidence/
+          retention-days: 7
