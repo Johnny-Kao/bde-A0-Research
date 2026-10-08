@@ -62,7 +62,14 @@ jobs:
           BIN="$(find _build -type f -name ball_loggermanager.t -print -quit)"
           test -n "$BIN"
           if [[ -n "$SAN" ]]; then
-            nm -D "$BIN" | grep "__${SAN:0:4}" | head -n 3 || true
+            case "$SAN" in
+              address) SYMBOL=__asan_init ;;
+              undefined) SYMBOL=__ubsan_handle ;;
+              thread) SYMBOL=__tsan_init ;;
+            esac
+            nm -D "$BIN" > "$RUNNER_TEMP/symbols.txt"
+            grep -F "$SYMBOL" "$RUNNER_TEMP/symbols.txt" | head -n 3
+            echo "SANITIZER_INSTRUMENTED=$SAN"
           fi
           "$BIN" "$CASE"
           echo "ABI_NEUTRAL_PASS mode=${{ matrix.mode }}"
