@@ -8,7 +8,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        memory_mb: [2048, 4096, 6144]
+        replicate: [1, 2, 3]
     runs-on: ubuntu-24.04
     timeout-minutes: 55
     steps:
@@ -52,17 +52,16 @@ jobs:
             /usr/bin/time -v -o "$GITHUB_WORKSPACE/evidence/candidate-$CASE.resources" "$BIN" "$CASE" > "$GITHUB_WORKSPACE/evidence/candidate-$CASE.log"
             if grep -q 'mismatches=[1-9]' "$GITHUB_WORKSPACE/evidence/candidate-$CASE.log"; then exit 1; fi
           done
-          cp ball/ball_loggermanager.cpp "$GITHUB_WORKSPACE/evidence/unused.txt" 2>/dev/null || true
           (cd "$GITHUB_WORKSPACE" && python3 scripts/install_route_accounting.py)
           bbs_build build --target ball_loggermanager.t --tests build
           for CASE in 996 999; do
             "$BIN" "$CASE" > "$GITHUB_WORKSPACE/evidence/routes-$CASE.log" 2> "$GITHUB_WORKSPACE/evidence/routes-$CASE.err"
             grep 'ROUTE_COUNTS' "$GITHUB_WORKSPACE/evidence/routes-$CASE.err"
           done
-          echo "PAIRED_RESOURCE_AND_ROUTE_PASS memory_profile_mb=${{ matrix.memory_mb }}"
+          echo "PAIRED_RESOURCE_AND_ROUTE_PASS replicate=${{ matrix.replicate }}"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: linux-matrix-${{ matrix.memory_mb }}
+          name: linux-matrix-${{ matrix.replicate }}
           path: evidence/
           retention-days: 7
