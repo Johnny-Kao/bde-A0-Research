@@ -1,0 +1,39 @@
+name: A0 single-thread actual BDE smoke
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: bloomberg/bde
+          path: upstream
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: bloomberg/bde-tools
+          path: bde-tools
+          persist-credentials: false
+      - name: Exercise baseline and A0 in single thread
+        working-directory: upstream
+        run: |
+          set -euo pipefail
+          git rev-parse HEAD
+          (cd "$GITHUB_WORKSPACE" && python3 scripts/install_single_thread_smoke.py)
+          export PATH="$GITHUB_WORKSPACE/bde-tools/bin:$PATH"
+          eval "$(bbs_build_env -u opt_dbg_64_cpp17)"
+          bbs_build configure --regex ball_loggermanager
+          bbs_build build --target ball_loggermanager.t --tests build
+          BENCH="$(find _build -type f -name 'ball_loggermanager.t' -print -quit)"
+          test -n "$BENCH"
+          echo "BASELINE SINGLE-THREAD"
+          "$BENCH" 998
+          (cd "$GITHUB_WORKSPACE" && python3 scripts/apply_a0_to_bde.py)
+          bbs_build build --target ball_loggermanager.t --tests build
+          echo "A0 SINGLE-THREAD"
+          "$BENCH" 998
