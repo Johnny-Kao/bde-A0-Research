@@ -1,0 +1,68 @@
+name: ABI neutral security validation
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  validate:
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [asan, ubsan, tsan, concurrency]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: bloomberg/bde
+          ref: 75dcd617380748053bebb30aa6ca73735677e849
+          path: upstream
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: bloomberg/bde-tools
+          path: bde-tools
+          persist-credentials: false
+      - name: Actual BDE safety matrix
+        working-directory: upstream
+        run: |
+          set -euo pipefail
+          if [[ "${{ matrix.mode }}" == "tsan" || "${{ matrix.mode }}" == "concurrency" ]]; then
+            (cd "$GITHUB_WORKSPACE" && python3 scripts/install_controlled_concurrency.py)
+            CASE=994
+          else
+            (cd "$GITHUB_WORKSPACE" && python3 scripts/install_adversarial_single.py)
+            CASE=995
+          fi
+          (cd "$GITHUB_WORKSPACE" && python3 scripts/apply_a0_to_bde.py)
+          (cd "$GITHUB_WORKSPACE" && python3 scripts/apply_a1_guard.py)
+          (cd "$GITHUB_WORKSPACE" && python3 scripts/apply_a2_a5_integrated.py)
+          (cd "$GITHUB_WORKSPACE" && python3 scripts/apply_abi_neutral_epoch.py)
+          git diff --check
+          git diff --exit-code -- groups/bal/ball/ball_loggermanager.h
+          export PATH="$GITHUB_WORKSPACE/bde-tools/bin:$PATH"
+          eval "$(bbs_build_env -u opt_dbg_64_cpp17)"
+          SAN=""
+          case "${{ matrix.mode }}" in
+            asan) SAN=address ;;
+            ubsan) SAN=undefined ;;
+            tsan) SAN=thread ;;
+          esac
+          if [[ -n "$SAN" ]]; then
+            export CFLAGS="${CFLAGS:-} -fsanitize=$SAN -fno-omit-frame-pointer"
+            export CXXFLAGS="${CXXFLAGS:-} -fsanitize=$SAN -fno-omit-frame-pointer"
+            export LDFLAGS="${LDFLAGS:-} -fsanitize=$SAN"
+          fi
+          export ASAN_OPTIONS=detect_leaks=1:halt_on_error=1
+          export UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1
+          export TSAN_OPTIONS=halt_on_error=1:exitcode=66
+          bbs_build configure --regex ball_loggermanager
+          bbs_build build --target ball_loggermanager.t --tests build
+          BIN="$(find _build -type f -name ball_loggermanager.t -print -quit)"
+          test -n "$BIN"
+          if [[ -n "$SAN" ]]; then
+            nm -D "$BIN" | grep "__${SAN:0:4}" | head -n 3 || true
+          fi
+          "$BIN" "$CASE"
+          echo "ABI_NEUTRAL_PASS mode=${{ matrix.mode }}"
