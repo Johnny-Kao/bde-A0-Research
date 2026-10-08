@@ -41,7 +41,7 @@ jobs:
           cat /proc/meminfo > "$GITHUB_WORKSPACE/evidence/meminfo.txt"
           echo "WORKLOAD=${{ matrix.name }} CASE=${{ matrix.case_id }}"
           case "${{ matrix.case_id }}" in
-            996) (cd "$GITHUB_WORKSPACE" && python3 scripts/install_zero_custom_benchmark.py) ;;
+            996) (cd "$GITHUB_WORKSPACE" && python3 scripts/install_actual_benchmark.py && python3 scripts/install_zero_custom_benchmark.py) ;;
             999) (cd "$GITHUB_WORKSPACE" && python3 scripts/install_actual_benchmark.py) ;;
             994) (cd "$GITHUB_WORKSPACE" && python3 scripts/install_controlled_concurrency.py) ;;
             995) (cd "$GITHUB_WORKSPACE" && python3 scripts/install_adversarial_single.py) ;;
