@@ -1,0 +1,52 @@
+name: A0-A5 controlled concurrency and TSan gate
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  concurrency:
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [normal, tsan]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: bloomberg/bde
+          ref: 75dcd617380748053bebb30aa6ca73735677e849
+          path: upstream
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: bloomberg/bde-tools
+          path: bde-tools
+          persist-credentials: false
+      - name: Build actual BDE and exercise valid-contract concurrent callers
+        working-directory: upstream
+        run: |
+          set -euo pipefail
+          (cd "$GITHUB_WORKSPACE" && python3 scripts/install_controlled_concurrency.py)
+          (cd "$GITHUB_WORKSPACE" && python3 scripts/apply_a0_to_bde.py)
+          (cd "$GITHUB_WORKSPACE" && python3 scripts/apply_a1_guard.py)
+          (cd "$GITHUB_WORKSPACE" && python3 scripts/apply_a2_a5_integrated.py)
+          git diff --check
+          export PATH="$GITHUB_WORKSPACE/bde-tools/bin:$PATH"
+          eval "$(bbs_build_env -u opt_dbg_64_cpp17)"
+          if [[ "${{ matrix.mode }}" == tsan ]]; then
+            export CFLAGS="${CFLAGS:-} -fsanitize=thread -fno-omit-frame-pointer"
+            export CXXFLAGS="${CXXFLAGS:-} -fsanitize=thread -fno-omit-frame-pointer"
+            export LDFLAGS="${LDFLAGS:-} -fsanitize=thread"
+            export TSAN_OPTIONS="halt_on_error=1:exitcode=66"
+          fi
+          bbs_build configure --regex ball_loggermanager
+          bbs_build build --target ball_loggermanager.t --tests build
+          BIN="$(find _build -type f -name 'ball_loggermanager.t' -print -quit)"
+          test -n "$BIN"
+          if [[ "${{ matrix.mode }}" == tsan ]]; then
+            nm -D "$BIN" | grep '__tsan_init'
+          fi
+          "$BIN" 994
+          echo "CONCURRENCY_GATE_PASS mode=${{ matrix.mode }}"
