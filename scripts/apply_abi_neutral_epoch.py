@@ -25,10 +25,10 @@ once("thread_local NegativeLoggerCache s_negativeLoggerCache = {0, false};",
 init=", d_cacheId(s_nextLoggerManagerCacheId.fetch_add(1, std::memory_order_relaxed))\n"
 assert s.count(init)==2
 s=s.replace(init,"")
-body="    BSLS_ASSERT(d_observer);"
+body="\n{\n    BSLS_ASSERT(d_observer);"
 assert s.count(body)==2
 s=s.replace(body,
-"""    // Invalidate all existing per-thread negative entries across address reuse.
+"""\n{\n    // Invalidate all existing per-thread negative entries across address reuse.
     // Manager lifetime must not overlap another thread's use/destruction.
     s_loggerManagerConstructionEpoch.fetch_add(1, std::memory_order_acq_rel);
     BSLS_ASSERT(d_observer);""")
@@ -52,7 +52,7 @@ once("    s_negativeLoggerCache.d_managerId = 0;",
 field="""    unsigned long long     d_cacheId;            // A0 research: unique
                                                  // instance identity"""
 assert t.count(field)==1
-t=t.replace(field,"")
+t=t.replace("\n\n"+field,"")
 h.write_text(t);p.write_text(s)
 assert "d_cacheId" not in s and "d_cacheId" not in t
 print("ABI-neutral variant installed: no LoggerManager header field")
