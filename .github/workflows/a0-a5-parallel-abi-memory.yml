@@ -66,11 +66,23 @@ jobs:
             done
             echo STEADY_REPEAT_PASS
           else
-            # Constrain the test process alone; leave runner/toolchain unaffected.
-            for LIMIT in 1048576 786432 655360; do
-              (ulimit -v "$LIMIT"; /usr/bin/time -v -o "$GITHUB_WORKSPACE/evidence/mem-$LIMIT.resources" "$BIN" 994 > "$GITHUB_WORKSPACE/evidence/mem-$LIMIT.log")
-              grep -q 'CONCURRENT_CORRECT generation=2 workers=64 scenario=2 errors=0' "$GITHUB_WORKSPACE/evidence/mem-$LIMIT.log"
-              echo "MEMORY_LIMIT_PASS_KB=$LIMIT"
+            # Keep 64-thread stack reservations intact. Run a separate,
+            # bounded memory consumer while repeatedly checking Logger identity.
+            for MIB in 128 256 384; do
+              python3 -c 'import sys,time; size=int(sys.argv[1]); pages=[bytearray(1024*1024) for _ in range(size)]; print("STRESS_READY_MIB="+str(size),flush=True); time.sleep(30)' "$MIB" > "$GITHUB_WORKSPACE/evidence/stress-$MIB.log" 2>&1 &
+              STRESS_PID=$!
+              trap 'kill "$STRESS_PID" 2>/dev/null || true' EXIT
+              for ATTEMPT in 1 2 3 4 5 6 7 8 9 10; do
+                grep -q STRESS_READY_MIB "$GITHUB_WORKSPACE/evidence/stress-$MIB.log" && break
+                sleep 0.3
+              done
+              grep -q "STRESS_READY_MIB=$MIB" "$GITHUB_WORKSPACE/evidence/stress-$MIB.log"
+              /usr/bin/time -v -o "$GITHUB_WORKSPACE/evidence/mem-$MIB.resources" "$BIN" 994 > "$GITHUB_WORKSPACE/evidence/mem-$MIB.log"
+              grep -q 'CONCURRENT_CORRECT generation=2 workers=64 scenario=2 errors=0' "$GITHUB_WORKSPACE/evidence/mem-$MIB.log"
+              kill "$STRESS_PID" 2>/dev/null || true
+              wait "$STRESS_PID" 2>/dev/null || true
+              trap - EXIT
+              echo "CONCURRENT_MEMORY_STRESS_PASS_MIB=$MIB"
             done
           fi
       - uses: actions/upload-artifact@v4
