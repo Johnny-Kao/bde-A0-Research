@@ -1,0 +1,60 @@
+name: A0-A5 paired regression matrix
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  paired:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, ubuntu-22.04]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: bloomberg/bde
+          path: upstream
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: bloomberg/bde-tools
+          path: bde-tools
+          persist-credentials: false
+      - name: Build baseline, then candidate, on same host
+        working-directory: upstream
+        run: |
+          set -euo pipefail
+          echo "UPSTREAM_SHA=$(git rev-parse HEAD)"
+          echo "RUNNER_OS=$RUNNER_OS"
+          (cd "$GITHUB_WORKSPACE" && python3 scripts/install_actual_benchmark.py)
+          (cd "$GITHUB_WORKSPACE" && python3 scripts/install_zero_custom_benchmark.py)
+          export PATH="$GITHUB_WORKSPACE/bde-tools/bin:$PATH"
+          eval "$(bbs_build_env -u opt_dbg_64_cpp17)"
+          bbs_build configure --regex ball_loggermanager
+          bbs_build build --target ball_loggermanager.t --tests build
+          BIN="$(find _build -type f -name 'ball_loggermanager.t' -print -quit)"
+          test -n "$BIN"
+          mkdir -p "$GITHUB_WORKSPACE/evidence"
+          echo "BASELINE ZERO_CUSTOM"
+          "$BIN" 996 | tee "$GITHUB_WORKSPACE/evidence/baseline-zero.txt"
+          echo "BASELINE MIXED"
+          "$BIN" 999 | tee "$GITHUB_WORKSPACE/evidence/baseline-mixed.txt"
+          (cd "$GITHUB_WORKSPACE" && python3 scripts/apply_a0_to_bde.py)
+          (cd "$GITHUB_WORKSPACE" && python3 scripts/apply_a1_guard.py)
+          (cd "$GITHUB_WORKSPACE" && python3 scripts/apply_a2_a5_integrated.py)
+          git diff --check
+          bbs_build build --target ball_loggermanager.t --tests build
+          echo "CANDIDATE ZERO_CUSTOM"
+          "$BIN" 996 | tee "$GITHUB_WORKSPACE/evidence/candidate-zero.txt"
+          echo "CANDIDATE MIXED"
+          "$BIN" 999 | tee "$GITHUB_WORKSPACE/evidence/candidate-mixed.txt"
+          (cd "$GITHUB_WORKSPACE" && python3 scripts/evaluate_paired_matrix.py evidence)
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: paired-${{ matrix.os }}
+          path: evidence/
+          retention-days: 7
