@@ -1,0 +1,39 @@
+name: A0 T5 actual BDE paired benchmark
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  paired:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: bloomberg/bde
+          path: upstream
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: bloomberg/bde-tools
+          path: bde-tools
+          persist-credentials: false
+      - name: Paired baseline and candidate using actual BDE test driver
+        working-directory: upstream
+        run: |
+          set -euo pipefail
+          git rev-parse HEAD
+          python3 ../scripts/install_actual_benchmark.py
+          export PATH="$GITHUB_WORKSPACE/bde-tools/bin:$PATH"
+          eval "$(bbs_build_env -u opt_dbg_64_cpp17)"
+          bbs_build configure --regex ball_loggermanager
+          bbs_build build --target ball_loggermanager.t --tests build
+          BENCH="$(find _build -type f -name 'ball_loggermanager.t' -print -quit)"
+          test -n "$BENCH"
+          echo "=== ACTUAL BDE BASELINE ==="
+          "$BENCH" 999
+          python3 ../scripts/apply_a0_to_bde.py
+          bbs_build build --target ball_loggermanager.t --tests build
+          echo "=== ACTUAL BDE A0 CANDIDATE ==="
+          "$BENCH" 999
