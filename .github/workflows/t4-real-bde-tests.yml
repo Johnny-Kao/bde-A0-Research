@@ -1,0 +1,52 @@
+name: A0 T4 real BDE component tests
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  bde-actual:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: bloomberg/bde
+          path: upstream
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: bloomberg/bde-tools
+          path: bde-tools
+          persist-credentials: false
+      - name: Source fingerprint and patch
+        run: |
+          git -C upstream rev-parse HEAD
+          python3 tests/t0_source_probe.py
+          python3 scripts/apply_a0_to_bde.py
+          git -C upstream diff --check
+          git -C upstream diff --stat
+      - name: Configure bde-tools C++17
+        working-directory: upstream
+        env:
+          BDE_CMAKE_BUILD_DIR: ${{ github.workspace }}/upstream/_build
+        run: |
+          export PATH="${{ github.workspace }}/bde-tools/bin:$PATH"
+          eval "$(bbs_build_env -u opt_dbg_64_cpp17)"
+          bbs_build configure --regex 'ball_loggermanager      - name: Build actual BDE libraries
+        working-directory: upstream
+        env:
+          BDE_CMAKE_BUILD_DIR: ${{ github.workspace }}/upstream/_build
+        run: |
+          export PATH="${{ github.workspace }}/bde-tools/bin:$PATH"
+          eval "$(bbs_build_env -u opt_dbg_64_cpp17)"
+          bbs_build build --target ball_loggermanager.t --tests run
+
+      - name: Build actual BDE libraries
+        working-directory: upstream
+        env:
+          BDE_CMAKE_BUILD_DIR: ${{ github.workspace }}/upstream/_build
+        run: |
+          export PATH="${{ github.workspace }}/bde-tools/bin:$PATH"
+          eval "$(bbs_build_env -u opt_dbg_64_cpp17)"
+          bbs_build build --target ball
