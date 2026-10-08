@@ -25,13 +25,15 @@ once("thread_local NegativeLoggerCache s_negativeLoggerCache = {0, false};",
 init=", d_cacheId(s_nextLoggerManagerCacheId.fetch_add(1, std::memory_order_relaxed))\n"
 assert s.count(init)==2
 s=s.replace(init,"")
-body="\n{\n    BSLS_ASSERT(d_observer);"
-assert s.count(body)==2
-s=s.replace(body,
-"""\n{\n    // Invalidate all existing per-thread negative entries across address reuse.
-    // Manager lifetime must not overlap another thread's use/destruction.
+import re
+constructors=[m.start() for m in re.finditer(r"LoggerManager::LoggerManager\\(",s)]
+assert len(constructors)==2,("constructors",len(constructors))
+for pos in reversed(constructors):
+    start=s.index("\\n{\\n",pos)+3
+    assert s[start:].startswith("    BSLS_ASSERT(d_observer);")
+    s=s[:start]+"""    // Any new manager invalidates all TLS negative entries.
     s_loggerManagerConstructionEpoch.fetch_add(1, std::memory_order_acq_rel);
-    BSLS_ASSERT(d_observer);""")
+"""+s[start:]
 once("""    const bool canReturnDefault =
         s_negativeLoggerCache.d_managerId == d_cacheId &&
         s_negativeLoggerCache.d_isNegative;""",
