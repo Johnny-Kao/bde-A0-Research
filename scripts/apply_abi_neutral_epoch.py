@@ -26,10 +26,10 @@ init=", d_cacheId(s_nextLoggerManagerCacheId.fetch_add(1, std::memory_order_rela
 assert s.count(init)==2
 s=s.replace(init,"")
 import re
-constructors=[m.start() for m in re.finditer(r"LoggerManager::LoggerManager\\(",s)]
+constructors=[m.start() for m in re.finditer(r"LoggerManager::LoggerManager\(",s)]
 assert len(constructors)==2,("constructors",len(constructors))
 for pos in reversed(constructors):
-    start=s.index("\\n{\\n",pos)+3
+    start=s.index("\n{\n",pos)+3
     assert s[start:].startswith("    BSLS_ASSERT(d_observer);")
     s=s[:start]+"""    // Any new manager invalidates all TLS negative entries.
     s_loggerManagerConstructionEpoch.fetch_add(1, std::memory_order_acq_rel);
