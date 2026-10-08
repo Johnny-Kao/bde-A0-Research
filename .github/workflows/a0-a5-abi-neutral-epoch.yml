@@ -1,0 +1,49 @@
+name: ABI-neutral epoch candidate research gate
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  lifecycle:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: bloomberg/bde
+          ref: 75dcd617380748053bebb30aa6ca73735677e849
+          path: upstream
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: bloomberg/bde-tools
+          path: bde-tools
+          persist-credentials: false
+      - name: Verify unchanged public layout and run real BDE lifecycle
+        working-directory: upstream
+        run: |
+          set -euo pipefail
+          H=groups/bal/ball/ball_loggermanager.h
+          BEFORE="$(sha256sum "$H" 2>/dev/null || shasum -a 256 "$H")"
+          (cd "$GITHUB_WORKSPACE" && python3 scripts/install_adversarial_single.py)
+          (cd "$GITHUB_WORKSPACE" && python3 scripts/apply_a0_to_bde.py)
+          (cd "$GITHUB_WORKSPACE" && python3 scripts/apply_a1_guard.py)
+          (cd "$GITHUB_WORKSPACE" && python3 scripts/apply_a2_a5_integrated.py)
+          (cd "$GITHUB_WORKSPACE" && python3 scripts/apply_abi_neutral_epoch.py)
+          AFTER="$(sha256sum "$H" 2>/dev/null || shasum -a 256 "$H")"
+          test "$BEFORE" = "$AFTER"
+          echo "ABI_HEADER_BYTE_IDENTICAL"
+          git diff --check
+          export PATH="$GITHUB_WORKSPACE/bde-tools/bin:$PATH"
+          eval "$(bbs_build_env -u opt_dbg_64_cpp17)"
+          bbs_build configure --regex ball_loggermanager
+          bbs_build build --target ball_loggermanager.t --tests build
+          BIN="$(find _build -type f -name 'ball_loggermanager.t' -print -quit)"
+          test -n "$BIN"
+          "$BIN" 995
+          echo "ABI_NEUTRAL_SINGLE_THREAD_PASS"
