@@ -34,8 +34,9 @@ swap('''    const bool sameManager = s_negativeLoggerCache.d_managerId == d_cach
     }
 ''',"A3 fast path")
 # A4: current patch already captures pointer under the lock.
-assert s.index("Logger *logger = itr !=")<s.index("d_defaultLoggersLock.unlock();")
-assert s.index("const bool isNegative =")<s.index("d_defaultLoggersLock.unlock();")
+slow=s[s.index("Logger& LoggerManager::getLoggerSlow()"):s.index("void LoggerManager::setLogger(")]
+assert slow.index("Logger *logger = itr !=")<slow.index("d_defaultLoggersLock.unlock();")
+assert slow.index("const bool isNegative =")<slow.index("d_defaultLoggersLock.unlock();")
 # A5: invalidate TLS before releasing the write guard so local transitions
 # cannot return a stale negative state after setLogger.
 swap('''    d_defaultLoggerCount.storeRelease(
