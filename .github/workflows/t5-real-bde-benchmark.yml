@@ -24,7 +24,7 @@ jobs:
         run: |
           set -euo pipefail
           git rev-parse HEAD
-          python3 ../scripts/install_actual_benchmark.py
+          (cd "$GITHUB_WORKSPACE" && python3 scripts/install_actual_benchmark.py)
           export PATH="$GITHUB_WORKSPACE/bde-tools/bin:$PATH"
           eval "$(bbs_build_env -u opt_dbg_64_cpp17)"
           bbs_build configure --regex ball_loggermanager
@@ -33,7 +33,7 @@ jobs:
           test -n "$BENCH"
           echo "=== ACTUAL BDE BASELINE ==="
           "$BENCH" 999
-          python3 ../scripts/apply_a0_to_bde.py
+          (cd "$GITHUB_WORKSPACE" && python3 scripts/apply_a0_to_bde.py)
           bbs_build build --target ball_loggermanager.t --tests build
           echo "=== ACTUAL BDE A0 CANDIDATE ==="
           "$BENCH" 999
