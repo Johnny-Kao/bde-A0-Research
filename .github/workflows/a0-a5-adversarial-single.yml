@@ -1,0 +1,44 @@
+name: A0-A5 adversarial single-thread gate
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  adversarial-single:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, ubuntu-22.04]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: bloomberg/bde
+          ref: 75dcd617380748053bebb30aa6ca73735677e849
+          path: upstream
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: bloomberg/bde-tools
+          path: bde-tools
+          persist-credentials: false
+      - name: Build actual BDE and run single-thread extremes
+        working-directory: upstream
+        run: |
+          set -euo pipefail
+          echo "UPSTREAM_SHA=$(git rev-parse HEAD)"
+          (cd "$GITHUB_WORKSPACE" && python3 scripts/install_adversarial_single.py)
+          (cd "$GITHUB_WORKSPACE" && python3 scripts/apply_a0_to_bde.py)
+          (cd "$GITHUB_WORKSPACE" && python3 scripts/apply_a1_guard.py)
+          (cd "$GITHUB_WORKSPACE" && python3 scripts/apply_a2_a5_integrated.py)
+          git diff --check
+          export PATH="$GITHUB_WORKSPACE/bde-tools/bin:$PATH"
+          eval "$(bbs_build_env -u opt_dbg_64_cpp17)"
+          bbs_build configure --regex ball_loggermanager
+          bbs_build build --target ball_loggermanager.t --tests build
+          BIN="$(find _build -type f -name 'ball_loggermanager.t' -print -quit)"
+          test -n "$BIN"
+          "$BIN" 995
+          echo "ADVERSARIAL_SINGLE_THREAD_GATE_PASS"
