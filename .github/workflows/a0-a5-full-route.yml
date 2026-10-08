@@ -1,0 +1,46 @@
+name: Full getLogger route accounting
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  routes:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: bloomberg/bde
+          ref: 75dcd617380748053bebb30aa6ca73735677e849
+          path: upstream
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: bloomberg/bde-tools
+          path: bde-tools
+          persist-credentials: false
+      - name: Instrument and count every lookup route
+        working-directory: upstream
+        run: |
+          set -euo pipefail
+          (cd "$GITHUB_WORKSPACE" && python3 scripts/install_actual_benchmark.py)
+          (cd "$GITHUB_WORKSPACE" && python3 scripts/install_zero_custom_benchmark.py)
+          (cd "$GITHUB_WORKSPACE" && python3 scripts/apply_a0_to_bde.py)
+          (cd "$GITHUB_WORKSPACE" && python3 scripts/apply_a1_guard.py)
+          (cd "$GITHUB_WORKSPACE" && python3 scripts/apply_a2_a5_integrated.py)
+          (cd "$GITHUB_WORKSPACE" && python3 scripts/apply_abi_neutral_epoch.py)
+          (cd "$GITHUB_WORKSPACE" && python3 scripts/install_route_accounting.py)
+          (cd "$GITHUB_WORKSPACE" && python3 scripts/install_full_route_accounting.py)
+          git diff --check
+          export PATH="$GITHUB_WORKSPACE/bde-tools/bin:$PATH"
+          eval "$(bbs_build_env -u opt_dbg_64_cpp17)"
+          bbs_build configure --regex ball_loggermanager
+          bbs_build build --target ball_loggermanager.t --tests build
+          BIN="$(find _build -type f -name ball_loggermanager.t -print -quit)"
+          for CASE in 996 999; do
+            "$BIN" "$CASE" > "case-$CASE.log" 2> "case-$CASE.err"
+            grep 'ROUTE_COUNTS' "case-$CASE.err"
+            ! grep -Eq 'mismatches=[1-9]' "case-$CASE.log"
+          done
+          echo FULL_ROUTE_ACCOUNTING_PASS
