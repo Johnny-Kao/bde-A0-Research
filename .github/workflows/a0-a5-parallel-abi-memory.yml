@@ -1,0 +1,81 @@
+name: Parallel ABI and memory stress
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  gate:
+    strategy:
+      fail-fast: false
+      matrix:
+        scenario: [mixed-abi, steady, memory]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: bloomberg/bde
+          ref: 75dcd617380748053bebb30aa6ca73735677e849
+          path: upstream
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: bloomberg/bde-tools
+          path: bde-tools
+          persist-credentials: false
+      - name: Build and run isolated scenario
+        working-directory: upstream
+        run: |
+          set -euo pipefail
+          mkdir -p "$GITHUB_WORKSPACE/evidence"
+          (cd "$GITHUB_WORKSPACE" && python3 scripts/install_controlled_concurrency.py)
+          export PATH="$GITHUB_WORKSPACE/bde-tools/bin:$PATH"
+          eval "$(bbs_build_env -u opt_dbg_64_cpp17)"
+          bbs_build configure --regex ball_loggermanager
+          bbs_build build --target ball_loggermanager.t --tests build
+          BIN="$(find _build -type f -name ball_loggermanager.t -print -quit)"
+          test -n "$BIN"
+          if [[ "${{ matrix.scenario }}" == mixed-abi ]]; then
+            OBJ="$(find _build -type f -name 'ball_loggermanager.t.cpp.o' -print -quit)"
+            test -n "$OBJ"
+            cp "$OBJ" "$GITHUB_WORKSPACE/evidence/old-driver.o"
+          fi
+          (cd "$GITHUB_WORKSPACE" && python3 scripts/apply_a0_to_bde.py)
+          (cd "$GITHUB_WORKSPACE" && python3 scripts/apply_a1_guard.py)
+          (cd "$GITHUB_WORKSPACE" && python3 scripts/apply_a2_a5_integrated.py)
+          (cd "$GITHUB_WORKSPACE" && python3 scripts/apply_abi_neutral_epoch.py)
+          git diff --exit-code -- groups/bal/ball/ball_loggermanager.h
+          bbs_build build --target ball_loggermanager.t --tests build
+          BIN="$(find _build -type f -name ball_loggermanager.t -print -quit)"
+          test -n "$BIN"
+          if [[ "${{ matrix.scenario }}" == mixed-abi ]]; then
+            # Restore original test driver object, then force link against
+            # freshly rebuilt candidate libraries without rebuilding driver.
+            OBJ="$(find _build -type f -name 'ball_loggermanager.t.cpp.o' -print -quit)"
+            test -n "$OBJ"
+            cp "$GITHUB_WORKSPACE/evidence/old-driver.o" "$OBJ"
+            touch "$OBJ"
+            cmake --build "$(find _build -type f -name build.ninja -printf '%h\n' -quit)" --target ball_loggermanager.t -- -d explain
+            "$BIN" 994
+            echo MIXED_ABI_OBJECT_LINK_PASS
+          elif [[ "${{ matrix.scenario }}" == steady ]]; then
+            for N in 1 2 3; do
+              /usr/bin/time -v -o "$GITHUB_WORKSPACE/evidence/steady-$N.resources" "$BIN" 994 > "$GITHUB_WORKSPACE/evidence/steady-$N.log"
+              grep -q 'CONCURRENT_CORRECT generation=2 workers=64 scenario=2 errors=0' "$GITHUB_WORKSPACE/evidence/steady-$N.log"
+            done
+            echo STEADY_REPEAT_PASS
+          else
+            # Constrain the test process alone; leave runner/toolchain unaffected.
+            for LIMIT in 262144 131072 65536; do
+              (ulimit -v "$LIMIT"; /usr/bin/time -v -o "$GITHUB_WORKSPACE/evidence/mem-$LIMIT.resources" "$BIN" 994 > "$GITHUB_WORKSPACE/evidence/mem-$LIMIT.log")
+              grep -q 'CONCURRENT_CORRECT generation=2 workers=64 scenario=2 errors=0' "$GITHUB_WORKSPACE/evidence/mem-$LIMIT.log"
+              echo "MEMORY_LIMIT_PASS_KB=$LIMIT"
+            done
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: evidence-${{ matrix.scenario }}
+          path: evidence/*.log
+          retention-days: 7
