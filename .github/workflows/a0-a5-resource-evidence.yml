@@ -1,0 +1,58 @@
+name: A0-A5 CPU RAM resource evidence
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  resources:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: bloomberg/bde
+          ref: 75dcd617380748053bebb30aa6ca73735677e849
+          path: upstream
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: bloomberg/bde-tools
+          path: bde-tools
+          persist-credentials: false
+      - name: Compare baseline and candidate CPU RAM on same host
+        working-directory: upstream
+        run: |
+          set -euo pipefail
+          mkdir -p "$GITHUB_WORKSPACE/evidence"
+          cat /proc/meminfo | head -n 8 | tee "$GITHUB_WORKSPACE/evidence/meminfo.txt"
+          lscpu | tee "$GITHUB_WORKSPACE/evidence/cpu.txt"
+          (cd "$GITHUB_WORKSPACE" && python3 scripts/install_actual_benchmark.py)
+          (cd "$GITHUB_WORKSPACE" && python3 scripts/install_zero_custom_benchmark.py)
+          export PATH="$GITHUB_WORKSPACE/bde-tools/bin:$PATH"
+          eval "$(bbs_build_env -u opt_dbg_64_cpp17)"
+          bbs_build configure --regex ball_loggermanager
+          bbs_build build --target ball_loggermanager.t --tests build
+          BIN="$(find _build -type f -name 'ball_loggermanager.t' -print -quit)"
+          test -n "$BIN"
+          for test in 996 999; do
+            /usr/bin/time -v -o "$GITHUB_WORKSPACE/evidence/baseline-${test}-resources.txt" "$BIN" "$test" > "$GITHUB_WORKSPACE/evidence/baseline-${test}.txt"
+          done
+          (cd "$GITHUB_WORKSPACE" && python3 scripts/apply_a0_to_bde.py)
+          (cd "$GITHUB_WORKSPACE" && python3 scripts/apply_a1_guard.py)
+          (cd "$GITHUB_WORKSPACE" && python3 scripts/apply_a2_a5_integrated.py)
+          bbs_build build --target ball_loggermanager.t --tests build
+          for test in 996 999; do
+            /usr/bin/time -v -o "$GITHUB_WORKSPACE/evidence/candidate-${test}-resources.txt" "$BIN" "$test" > "$GITHUB_WORKSPACE/evidence/candidate-${test}.txt"
+          done
+          for file in "$GITHUB_WORKSPACE"/evidence/*-resources.txt; do
+            echo "=== $file ==="
+            grep -E 'User time|System time|Percent of CPU|Elapsed|Maximum resident set size|Major .*page faults|Minor .*page faults|Voluntary context switches|Involuntary context switches' "$file"
+          done
+          echo "RESOURCE_EVIDENCE_CAPTURE_PASS"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bde-cpu-ram-paired
+          path: evidence/
+          retention-days: 7
