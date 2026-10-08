@@ -1,0 +1,68 @@
+name: Linux A/B path and resource matrix
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  matrix:
+    strategy:
+      fail-fast: false
+      matrix:
+        memory_mb: [2048, 4096, 6144]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: bloomberg/bde
+          ref: 75dcd617380748053bebb30aa6ca73735677e849
+          path: upstream
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: bloomberg/bde-tools
+          path: bde-tools
+          persist-credentials: false
+      - name: Paired original and candidate cases
+        working-directory: upstream
+        run: |
+          set -euo pipefail
+          mkdir -p "$GITHUB_WORKSPACE/evidence"
+          lscpu > "$GITHUB_WORKSPACE/evidence/cpu.txt"
+          cat /proc/meminfo > "$GITHUB_WORKSPACE/evidence/meminfo.txt"
+          (cd "$GITHUB_WORKSPACE" && python3 scripts/install_actual_benchmark.py)
+          (cd "$GITHUB_WORKSPACE" && python3 scripts/install_zero_custom_benchmark.py)
+          export PATH="$GITHUB_WORKSPACE/bde-tools/bin:$PATH"
+          eval "$(bbs_build_env -u opt_dbg_64_cpp17)"
+          bbs_build configure --regex ball_loggermanager
+          bbs_build build --target ball_loggermanager.t --tests build
+          BIN="$(find _build -type f -name ball_loggermanager.t -print -quit)"
+          test -n "$BIN"
+          for CASE in 996 999; do
+            /usr/bin/time -v -o "$GITHUB_WORKSPACE/evidence/baseline-$CASE.resources" "$BIN" "$CASE" > "$GITHUB_WORKSPACE/evidence/baseline-$CASE.log"
+          done
+          (cd "$GITHUB_WORKSPACE" && python3 scripts/apply_a0_to_bde.py)
+          (cd "$GITHUB_WORKSPACE" && python3 scripts/apply_a1_guard.py)
+          (cd "$GITHUB_WORKSPACE" && python3 scripts/apply_a2_a5_integrated.py)
+          (cd "$GITHUB_WORKSPACE" && python3 scripts/apply_abi_neutral_epoch.py)
+          git diff --exit-code -- groups/bal/ball/ball_loggermanager.h
+          bbs_build build --target ball_loggermanager.t --tests build
+          for CASE in 996 999; do
+            /usr/bin/time -v -o "$GITHUB_WORKSPACE/evidence/candidate-$CASE.resources" "$BIN" "$CASE" > "$GITHUB_WORKSPACE/evidence/candidate-$CASE.log"
+            if grep -q 'mismatches=[1-9]' "$GITHUB_WORKSPACE/evidence/candidate-$CASE.log"; then exit 1; fi
+          done
+          cp ball/ball_loggermanager.cpp "$GITHUB_WORKSPACE/evidence/unused.txt" 2>/dev/null || true
+          (cd "$GITHUB_WORKSPACE" && python3 scripts/install_route_accounting.py)
+          bbs_build build --target ball_loggermanager.t --tests build
+          for CASE in 996 999; do
+            "$BIN" "$CASE" > "$GITHUB_WORKSPACE/evidence/routes-$CASE.log" 2> "$GITHUB_WORKSPACE/evidence/routes-$CASE.err"
+            grep 'ROUTE_COUNTS' "$GITHUB_WORKSPACE/evidence/routes-$CASE.err"
+          done
+          echo "PAIRED_RESOURCE_AND_ROUTE_PASS memory_profile_mb=${{ matrix.memory_mb }}"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: linux-matrix-${{ matrix.memory_mb }}
+          path: evidence/
+          retention-days: 7
