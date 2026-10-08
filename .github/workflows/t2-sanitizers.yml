@@ -1,0 +1,19 @@
+name: A0 T2 sanitizer validation
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  sanitizers:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        sanitizer: [address, undefined, thread]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build sanitizer candidate
+        run: clang++ -std=c++17 -O1 -g -pthread -fno-omit-frame-pointer -fsanitize=${{ matrix.sanitizer }} tests/a0_model.cpp -o a0_model
+      - name: Execute model
+        run: ./a0_model
