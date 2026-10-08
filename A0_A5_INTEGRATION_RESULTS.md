@@ -24,3 +24,16 @@
 5. Owner approval before Research→Staging or official upstream PR.
 
 No multi-runner stress dispatched under the single-thread-first agreement until basic integration tests passed. As of these runs basic single-thread and one-host gates passed; full multi-runner validation is a separate pending gate.
+
+
+## Paired regression evidence — Oct 8, 2026
+
+- https://github.com/Johnny-Kao/bde-A0-Research/actions/runs/37780177198 — PASS both ubuntu-24.04 and ubuntu-22.04. Two hosted runner environments; not independent hardware families.
+- Actual BDE, same runner baseline -> candidate, 25 strata per OS × 5 repeats; explicit Logger pointer identities, zero mismatches; unmodified upstream commit shown in the runs. Raw text logs and paired-summary.json uploaded as job artifacts.
+- Ubuntu 24.04: 8 workers, one unrelated custom association: 25.987x; 16 workers, same scenario 30.650x; 4 workers mixed with churn 6.274x.
+- Ubuntu 22.04: 8 workers, one custom association: 16.896x; 16 workers same scenario 24.206x; 4 workers mixed with churn 3.029x.
+- Counterexamples: zero-custom 8 workers ubuntu-24.04 0.929x (regression); all-custom 8 workers ubuntu-24.04 0.978x; single-worker mixed ubuntu-22.04 0.464x. Do NOT present the candidate as unconditionally faster.
+- Benchmark case 999's label `scenario=0` was skipped deliberately; a separate true-zero-custom case 996 was added and verified by this paired run.
+- Timing is always baseline first and candidate second per host; needs reversed/crossover order with fresh hosts to control thermal/run-order noise.
+- A2 ABI-neutral goal is unsolved. A1 and A3 are branch rearrangements with no separately proven net benefit; A4 preserves pointer-under-lock fix. Do not advertise A1–A5 as independent exponential speedups.
+- Actual-BDE TSan, sanitizer evidence, cross-platform, real end-to-end logging, and ABI portability remain release blockers. Research Sign-off is NOT approved.
