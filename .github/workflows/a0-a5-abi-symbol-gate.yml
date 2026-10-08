@@ -31,7 +31,7 @@ jobs:
           bbs_build build --target ball_loggermanager.t --tests build
           BASE="$(find _build -type f -name ball_loggermanager.t -print -quit)"
           test -n "$BASE"
-          nm -C "$BASE" | awk '/ [TW] bloomberg::ball::LoggerManager::/ {print substr($0,index($0,"bloomberg::"))}' | sort -u > "$GITHUB_WORKSPACE/abi/baseline-symbols.txt"
+          nm -C "$BASE" | grep -E ' [TW] .*LoggerManager::' | sed -E 's/^.* [TW] //' | sort -u > "$GITHUB_WORKSPACE/abi/baseline-symbols.txt"
           test -s "$GITHUB_WORKSPACE/abi/baseline-symbols.txt"
           cp "$BASE" "$GITHUB_WORKSPACE/abi/baseline-executable"
           (cd "$GITHUB_WORKSPACE" && python3 scripts/apply_a0_to_bde.py)
@@ -41,7 +41,7 @@ jobs:
           git diff --exit-code -- groups/bal/ball/ball_loggermanager.h
           bbs_build build --target ball_loggermanager.t --tests build
           BIN="$(find _build -type f -name ball_loggermanager.t -print -quit)"
-          nm -C "$BIN" | awk '/ [TW] bloomberg::ball::LoggerManager::/ {print substr($0,index($0,"bloomberg::"))}' | sort -u > "$GITHUB_WORKSPACE/abi/candidate-symbols.txt"
+          nm -C "$BIN" | grep -E ' [TW] .*LoggerManager::' | sed -E 's/^.* [TW] //' | sort -u > "$GITHUB_WORKSPACE/abi/candidate-symbols.txt"
           test -s "$GITHUB_WORKSPACE/abi/candidate-symbols.txt"
           diff -u "$GITHUB_WORKSPACE/abi/baseline-symbols.txt" "$GITHUB_WORKSPACE/abi/candidate-symbols.txt"
           "$BIN" 1
