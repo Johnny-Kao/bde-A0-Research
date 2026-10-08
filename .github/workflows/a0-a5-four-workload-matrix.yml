@@ -1,0 +1,79 @@
+name: Four workload BDE baseline candidate matrix
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  workload:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: daily-default
+            case_id: 996
+          - name: mixed-custom
+            case_id: 999
+          - name: high-concurrency
+            case_id: 994
+          - name: lifecycle-churn
+            case_id: 995
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: bloomberg/bde
+          ref: 75dcd617380748053bebb30aa6ca73735677e849
+          path: upstream
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: bloomberg/bde-tools
+          path: bde-tools
+          persist-credentials: false
+      - name: Paired real BDE workload and resource evidence
+        working-directory: upstream
+        run: |
+          set -euo pipefail
+          mkdir -p "$GITHUB_WORKSPACE/evidence"
+          lscpu > "$GITHUB_WORKSPACE/evidence/cpu.txt"
+          cat /proc/meminfo > "$GITHUB_WORKSPACE/evidence/meminfo.txt"
+          echo "WORKLOAD=${{ matrix.name }} CASE=${{ matrix.case_id }}"
+          case "${{ matrix.case_id }}" in
+            996) (cd "$GITHUB_WORKSPACE" && python3 scripts/install_zero_custom_benchmark.py) ;;
+            999) (cd "$GITHUB_WORKSPACE" && python3 scripts/install_actual_benchmark.py) ;;
+            994) (cd "$GITHUB_WORKSPACE" && python3 scripts/install_controlled_concurrency.py) ;;
+            995) (cd "$GITHUB_WORKSPACE" && python3 scripts/install_adversarial_single.py) ;;
+          esac
+          export PATH="$GITHUB_WORKSPACE/bde-tools/bin:$PATH"
+          eval "$(bbs_build_env -u opt_dbg_64_cpp17)"
+          bbs_build configure --regex ball_loggermanager
+          bbs_build build --target ball_loggermanager.t --tests build
+          BIN="$(find _build -type f -name ball_loggermanager.t -print -quit)"
+          test -n "$BIN"
+          for ROUND in 1 2 3; do
+            /usr/bin/time -v -o "$GITHUB_WORKSPACE/evidence/baseline-$ROUND.resources" "$BIN" "${{ matrix.case_id }}" > "$GITHUB_WORKSPACE/evidence/baseline-$ROUND.log"
+          done
+          (cd "$GITHUB_WORKSPACE" && python3 scripts/apply_a0_to_bde.py)
+          (cd "$GITHUB_WORKSPACE" && python3 scripts/apply_a1_guard.py)
+          (cd "$GITHUB_WORKSPACE" && python3 scripts/apply_a2_a5_integrated.py)
+          (cd "$GITHUB_WORKSPACE" && python3 scripts/apply_abi_neutral_epoch.py)
+          git diff --check
+          git diff --exit-code -- groups/bal/ball/ball_loggermanager.h
+          bbs_build build --target ball_loggermanager.t --tests build
+          for ROUND in 1 2 3; do
+            /usr/bin/time -v -o "$GITHUB_WORKSPACE/evidence/candidate-$ROUND.resources" "$BIN" "${{ matrix.case_id }}" > "$GITHUB_WORKSPACE/evidence/candidate-$ROUND.log"
+            if grep -Eq 'mismatches=[1-9]|errors=[1-9]' "$GITHUB_WORKSPACE/evidence/candidate-$ROUND.log"; then exit 1; fi
+          done
+          for F in "$GITHUB_WORKSPACE"/evidence/*.resources; do
+            echo "RESOURCE_FILE=$(basename "$F")"
+            grep -E 'User time|System time|Maximum resident set size|Major .*page faults|Minor .*page faults|Voluntary context switches|Involuntary context switches' "$F"
+          done
+          echo "PAIRED_WORKLOAD_PASS name=${{ matrix.name }}"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: workload-${{ matrix.name }}
+          path: evidence/
+          retention-days: 7
