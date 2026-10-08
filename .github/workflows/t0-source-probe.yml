@@ -1,0 +1,29 @@
+name: BDE A0 T0 source probe
+on:
+  push:
+    paths:
+      - 'tests/t0_source_probe.py'
+      - '.github/workflows/t0-source-probe.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  source-probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Checkout research
+        uses: actions/checkout@v4
+      - name: Checkout actual upstream BDE (read-only)
+        uses: actions/checkout@v4
+        with:
+          repository: bloomberg/bde
+          path: upstream
+          persist-credentials: false
+      - name: Capture upstream SHA and machine
+        run: |
+          git -C upstream rev-parse HEAD
+          uname -a
+          python3 --version
+      - name: Run T0 source-contract probe (not benchmark)
+        run: python3 tests/t0_source_probe.py
