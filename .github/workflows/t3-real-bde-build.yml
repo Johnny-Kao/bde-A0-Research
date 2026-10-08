@@ -22,7 +22,7 @@ jobs:
       - name: Source fingerprint and patch
         run: |
           git -C upstream rev-parse HEAD
-          python3 scripts/t0_source_probe.py
+          python3 tests/t0_source_probe.py
           python3 scripts/apply_a0_to_bde.py
           git -C upstream diff --check
           git -C upstream diff --stat
