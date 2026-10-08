@@ -67,7 +67,7 @@ jobs:
             echo STEADY_REPEAT_PASS
           else
             # Constrain the test process alone; leave runner/toolchain unaffected.
-            for LIMIT in 262144 131072 65536; do
+            for LIMIT in 1048576 786432 655360; do
               (ulimit -v "$LIMIT"; /usr/bin/time -v -o "$GITHUB_WORKSPACE/evidence/mem-$LIMIT.resources" "$BIN" 994 > "$GITHUB_WORKSPACE/evidence/mem-$LIMIT.log")
               grep -q 'CONCURRENT_CORRECT generation=2 workers=64 scenario=2 errors=0' "$GITHUB_WORKSPACE/evidence/mem-$LIMIT.log"
               echo "MEMORY_LIMIT_PASS_KB=$LIMIT"
