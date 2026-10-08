@@ -1,0 +1,58 @@
+name: A0-A5 platform and ABI research gate
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  platform:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15, macos-14]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: bloomberg/bde
+          ref: 75dcd617380748053bebb30aa6ca73735677e849
+          path: upstream
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: bloomberg/bde-tools
+          path: bde-tools
+          persist-credentials: false
+      - name: Verify ABI delta, build and run BDE single-thread boundary
+        working-directory: upstream
+        run: |
+          set -euo pipefail
+          echo "PLATFORM=$(uname -a)"
+          echo "COMPILER=$(c++ --version | head -n 1)"
+          echo "UPSTREAM_SHA=$(git rev-parse HEAD)"
+          python3 - <<'PY'
+          from pathlib import Path
+          h=Path("groups/bal/ball/ball_loggermanager.h").read_text()
+          assert "unsigned long long     d_cacheId;" not in h
+          print("BASELINE_ABI: manager generation member absent")
+          PY
+          (cd "$GITHUB_WORKSPACE" && python3 scripts/install_adversarial_single.py)
+          (cd "$GITHUB_WORKSPACE" && python3 scripts/apply_a0_to_bde.py)
+          (cd "$GITHUB_WORKSPACE" && python3 scripts/apply_a1_guard.py)
+          (cd "$GITHUB_WORKSPACE" && python3 scripts/apply_a2_a5_integrated.py)
+          python3 - <<'PY'
+          from pathlib import Path
+          h=Path("groups/bal/ball/ball_loggermanager.h").read_text()
+          assert "unsigned long long     d_cacheId;" in h
+          print("ABI_CHANGE_CONFIRMED: extra manager data member; binary compatibility NOT certified")
+          PY
+          git diff --check
+          export PATH="$GITHUB_WORKSPACE/bde-tools/bin:$PATH"
+          eval "$(bbs_build_env -u opt_dbg_64_cpp17)"
+          bbs_build configure --regex ball_loggermanager
+          bbs_build build --target ball_loggermanager.t --tests build
+          BIN="$(find _build -type f -name 'ball_loggermanager.t' -print -quit)"
+          test -n "$BIN"
+          "$BIN" 995
+          echo "PLATFORM_BDE_CASE_995_PASS"
