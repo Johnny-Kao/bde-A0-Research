@@ -1,0 +1,38 @@
+name: A1 guarded path single-thread gate
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  a1-gate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: bloomberg/bde
+          path: upstream
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: bloomberg/bde-tools
+          path: bde-tools
+          persist-credentials: false
+      - name: Apply A0 and A1, compile and single-thread test
+        working-directory: upstream
+        run: |
+          set -euo pipefail
+          git rev-parse HEAD
+          (cd "$GITHUB_WORKSPACE" && python3 scripts/install_state_machine.py)
+          (cd "$GITHUB_WORKSPACE" && python3 scripts/apply_a0_to_bde.py)
+          (cd "$GITHUB_WORKSPACE" && python3 scripts/apply_a1_guard.py)
+          git diff --check
+          export PATH="$GITHUB_WORKSPACE/bde-tools/bin:$PATH"
+          eval "$(bbs_build_env -u opt_dbg_64_cpp17)"
+          bbs_build configure --regex ball_loggermanager
+          bbs_build build --target ball_loggermanager.t --tests build
+          BIN="$(find _build -type f -name 'ball_loggermanager.t' -print -quit)"
+          test -n "$BIN"
+          "$BIN" 997
+          "$BIN" 23
