@@ -52,12 +52,12 @@ patched='''    if (s_negativeLoggerCache.d_managerId == d_cacheId
     return *logger;'''
 s=replace_once(s,original,patched)
 needle='''    d_defaultLoggerCount.storeRelease(
-                                static_cast<unsigned>(d_defaultLoggers.size()));
+                               static_cast<unsigned>(d_defaultLoggers.size()));
 }
 
                              // Category Management'''
 replacement='''    d_defaultLoggerCount.storeRelease(
-                                static_cast<unsigned>(d_defaultLoggers.size()));
+                               static_cast<unsigned>(d_defaultLoggers.size()));
     // setLogger affects only this thread; invalidate its negative hit.
     s_negativeLoggerCache.d_isNegative = false;
 }
